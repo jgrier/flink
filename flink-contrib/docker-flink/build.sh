@@ -18,4 +18,75 @@
 # limitations under the License.
 ################################################################################
 
-docker build -t "flink" .
+usage() {
+  cat <<HERE
+Usage:
+  build.sh --from-local-dist
+  build.sh --from-release --flink-version <x.x.x> --hadoop-version <x.x> --scala-version <x.xx>
+  build.sh --help
+HERE
+  exit 1
+}
+
+while [[ $# -ge 1 ]]
+do
+key="$1"
+  case $key in
+    --from-local-dist)
+    FROM_LOCAL="true"
+    shift
+    ;;
+    --from-release)
+    FROM_RELEASE="true"
+    ;;
+    --flink-version)
+    FLINK_VERSION="$2"
+    shift
+    ;;
+    --hadoop-version)
+    HADOOP_VERSION="$(echo "$2" | sed 's/\.//')"
+    shift
+    ;;
+    --scala-version)
+    SCALA_VERSION="$2"
+    shift
+    ;;
+    --help)
+    usage
+    ;;
+    *)
+    # unknown option
+    ;;
+  esac
+  shift
+done
+
+TMPDIR=_TMP_
+mkdir -p "${TMPDIR}"
+
+if [ -n "${FROM_RELEASE}" ]; then
+
+  [[ -n "${FLINK_VERSION}" ]] && [[ -n "${HADOOP_VERSION}" ]] && [[ -n "${SCALA_VERSION}" ]] || usage
+
+  FLINK_BASE_URL="$(curl -s https://www.apache.org/dyn/closer.cgi\?preferred\=true)flink/flink-${FLINK_VERSION}/"
+  FLINK_DIST_FILE_NAME="flink-${FLINK_VERSION}-bin-hadoop${HADOOP_VERSION}-scala_${SCALA_VERSION}.tgz"
+  CURL_OUTPUT="${TMPDIR}/${FLINK_DIST_FILE_NAME}"
+
+  echo "Downloading ${FLINK_DIST_FILE_NAME} from ${FLINK_BASE_URL}"
+  curl -s ${FLINK_BASE_URL}${FLINK_DIST_FILE_NAME} --output ${CURL_OUTPUT}
+
+  FLINK_DIST="${CURL_OUTPUT}"
+
+elif [ -n "${FROM_LOCAL}" ]; then
+
+    DIST_DIR="../../flink-dist/target/flink-*-bin"
+    FLINK_DIST="${TMPDIR}/flink.tgz"
+    echo "Using flink dist: ${DIST_DIR}"
+    tar -C ${DIST_DIR} -cvzf "${FLINK_DIST}" .
+else
+  usage
+fi
+
+docker build --build-arg flink_dist="${FLINK_DIST}" -t flink .
+
+rm -rf "${TMPDIR}"
